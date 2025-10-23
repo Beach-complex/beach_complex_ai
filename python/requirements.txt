@@ -1,0 +1,24 @@
+# Core numerics
+numpy==1.26.4
+pandas==2.2.2
+python-dateutil==2.9.0.post0
+
+# ML stack
+scikit-learn==1.4.2
+lightgbm==4.3.0
+joblib==1.4.2
+
+# ONNX toolchain
+onnx==1.15.0
+onnxruntime==1.19.2
+skl2onnx==1.16.0
+
+# Prophet + deps
+prophet==1.1.5
+cmdstanpy==1.2.4
+holidays==0.56
+
+# API
+fastapi==0.115.5
+pydantic==2.9.2
+uvicorn==0.30.6
