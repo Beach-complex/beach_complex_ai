@@ -8,7 +8,7 @@ import requests
 KST = ZoneInfo("Asia/Seoul")
 
 # ===== 설정 =====
-OPENWEATHER_API_KEY = "1d5cc2adeb9583f7289f0d588a2f4964"  # 실제 키로 교체
+OPENWEATHER_API_KEY = "YOUR-API-KEY"  # 실제 키로 교체
 OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 
