@@ -1,0 +1,5 @@
+fastapi
+pydantic
+requests
+tzdata
+uvicorn[standard]

@@ -12,3 +12,4 @@ java-api/.gradle/
 python/__pycache__/
 *.log
 .DS_Store
+.venv
