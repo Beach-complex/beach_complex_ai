@@ -1,81 +1,117 @@
-# Seoul/Busan Subway Congestion Prediction Stack
+# Beach Congestion AI Server
 
-This repository packages a tri-model congestion prediction workflow together
-with a Spring Boot integration layer. The implementation follows the recipe
-outlined in the project brief and provides ready-to-run Docker images for the
-Java API and Prophet sidecar.
+부산 해수욕장(해운대, 광안리) 혼잡도를 예측하는 AI 서버입니다.
+[메인 앱](https://github.com/Beach-complex/Beach_complex)(Spring Boot)의 `CongestionClient`가 이 서버에 HTTP GET 요청을 보내고, 응답을 `CongestionCurrentResponse`로 역직렬화하여 사용합니다.
+현재는 룰 기반 가중치 계산으로 동작하며, 추후 AI 모델로 교체 예정입니다.
 
-## Repository layout
+## 기술 스택
 
-```
-models/
-  onnx/                 # ONNX classifiers + metadata (placeholders tracked via .gitkeep)
-  prophet/              # Serialized Prophet models per station (joblib)
-python/
-  app_prophet.py        # FastAPI application serving Prophet forecasts
-  train_classifiers.py  # Train logistic/LGBM models and export ONNX artifacts
-  train_prophet.py      # Optional Prophet offline training script
-  train_eval_select.py  # Train→evaluate→select workflow for the classifiers
-  requirements.txt      # Pinned Python dependency set
-java-api/
-  build.gradle          # Spring Boot + ONNX Runtime configuration
-  Dockerfile            # Multi-stage build producing the API container image
-  src/main/java         # Java sources (controller, service, ONNX helper, main)
-  src/main/resources    # Application configuration
+- Python 3.11+
+- FastAPI
+- Pydantic
+- OpenWeatherMap API
+
+## 설치 및 실행
+
+```bash
+# 패키지 설치
+pip install fastapi uvicorn requests
+
+# 서버 실행
+uvicorn main:app --reload
 ```
 
-## Quick start
+서버 기본 주소: `http://127.0.0.1:8000`
 
-1. **Install Python dependencies** and train/export the classification models:
+## API 키 설정
 
-   ```bash
-   pip install -r python/requirements.txt
-   python python/train_classifiers.py
-   # or
-   python python/train_eval_select.py
-   ```
+`main.py` 상단의 `OPENWEATHER_API_KEY` 값을 실제 키로 교체하세요.
 
-   The scripts emit ONNX artifacts and accompanying metadata under
-   `models/onnx/`.
+```python
+OPENWEATHER_API_KEY = "your_api_key_here"
+```
 
-2. **(Optional) Train Prophet models** per station:
+## 엔드포인트
 
-   ```bash
-   python python/train_prophet.py
-   ```
+### `GET /health`
+서버 상태 확인
 
-   Drop the resulting `{station_id}.joblib` files inside `models/prophet/`.
+```json
+{ "status": "ok" }
+```
 
-3. **Launch the services** via Docker Compose:
+---
 
-   ```bash
-   docker-compose up --build
-   ```
+### `GET /beaches`
+지원하는 해수욕장 목록 반환
 
-   * `api-java` exposes the classification endpoint on `:8080`.
-   * `prophet-infer` exposes the Prophet forecasts on `:8000`.
+```json
+[
+  { "id": "haeundae", "name": "해운대해수욕장", "lat": 35.158698, "lon": 129.160384, "popularity_weight": 1.0 },
+  { "id": "gwangalli", "name": "광안리해수욕장", "lat": 35.153208, "lon": 129.118386, "popularity_weight": 0.85 }
+]
+```
 
-4. **Sample requests**:
+---
 
-   ```bash
-   curl -X POST http://localhost:8080/v1/classify \
-     -H 'Content-Type: application/json' \
-     -d '{
-       "feature_temp": 27.4,
-       "feature_rain": 0.2,
-       "feature_is_holiday": 0
-     }'
+### `GET /congestion/current?beach_id={id}`
+현재 시각 기준 혼잡도 반환
 
-   curl "http://localhost:8080/v1/forecast?stationId=S001&hours=24"
-   ```
+| 파라미터 | 필수 | 설명 |
+|---|---|---|
+| `beach_id` | O | `haeundae` 또는 `gwangalli` |
 
-## Notes
+```json
+{
+  "beach_id": "haeundae",
+  "beach_name": "해운대해수욕장",
+  "input": {
+    "timestamp": "2024-08-01T14:00:00+09:00",
+    "weather": { "temp_c": 29.0, "rain_mm": 0.0, "wind_mps": 2.5 },
+    "is_weekend_or_holiday": true
+  },
+  "rule_based": {
+    "score_raw": 0.85,
+    "score_pct": 85.0,
+    "level": "혼잡"
+  },
+  "ai": null
+}
+```
 
-* The Java service expects an `active.onnx` file within `models/onnx/`.
-  `train_eval_select.py` copies the best-performing classifier to this name
-  automatically.
-* The ONNX inference helper discovers the input node name dynamically, so the
-  classifier export scripts can freely choose the signature as long as the
-  feature ordering matches `meta.joblib`.
-* The Prophet Dockerfile performs a warm-up fit during the build to pre-compile
-  the Stan model and avoid first-request latency at runtime.
+---
+
+### `GET /congestion/hourly?beach_id={id}&target_date={date}`
+특정 날짜의 시간대별(0~23시) 혼잡도 반환
+
+| 파라미터 | 필수 | 설명 |
+|---|---|---|
+| `beach_id` | O | `haeundae` 또는 `gwangalli` |
+| `target_date` | X | `YYYY-MM-DD` 형식, 생략 시 오늘 |
+
+## 혼잡도 등급
+
+| 범위 | 등급 |
+|---|---|
+| 0 ~ 29 | 여유 |
+| 30 ~ 59 | 보통 |
+| 60 ~ 89 | 혼잡 |
+| 90 이상 | 매우 혼잡 |
+
+## 혼잡도 계산 방식
+
+룰 기반 가중치 곱셈 방식입니다.
+
+```
+혼잡도 = 인기도 × 시간대 × 계절 × 주말여부 × 날씨
+```
+
+AI 모델 기반 예측은 추후 `ai` 블록에 추가 예정입니다.
+
+## Swagger UI
+
+서버 실행 후 아래 주소에서 API 명세 확인 및 테스트 가능합니다.
+
+```
+http://127.0.0.1:8000/docs
+```
