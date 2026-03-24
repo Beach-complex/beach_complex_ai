@@ -93,7 +93,7 @@ def weather_factor(temp_c: float, rain_mm: float, wind_mps: float) -> float:
     return temp_score * rain_score * wind_score
 
 
-
+# TODO: 휴리스틱 코드라 추후에 모델 붙일 예정
 def raw_congestion_score(
     beach: BeachInfo,
     dt_kst: datetime,
@@ -112,10 +112,13 @@ def raw_congestion_score(
 
 def normalize_to_0_100(score: float, max_score: float = 1.0) -> float:
     # 최대 이론치 기준 0~100 정규화
-    x = min(score / max_score, 1.5)  # 상한 150%
-    return round(x * 100, 1)
+    # 상한을 1.5로 고정 — 현재 룰 기반에서는 score가 1.0을 넘지 않지만,
+    # 추후 AI 모델 등 외부 인자가 추가되어 score가 1.0을 초과하더라도
+    # 최대 150점을 넘지 않도록 방어 (ex. 1.8 → 1.5로 잘림)
+    x = min(score / max_score, 1.5)
+    return round(x * 100, 1)  # 소수점 1자리 반올림 후 퍼센트로 반환
 
-
+# 퍼센트 
 def level_from_pct(pct: float) -> str:
     if pct < 30:
         return "여유"
