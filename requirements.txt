@@ -2,4 +2,6 @@ fastapi
 pydantic
 requests
 tzdata
+mangum
 uvicorn[standard]
+boto3

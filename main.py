@@ -1,3 +1,10 @@
+import os
+import json
+from functools import lru_cache
+
+import boto3
+from botocore.exceptions import ClientError
+from mangum import Mangum
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from datetime import datetime, date
@@ -7,8 +14,41 @@ import requests
 
 KST = ZoneInfo("Asia/Seoul")
 
+# Lambda warm environment 재사용 용
+session = requests.Session()
+session.trust_env = False
+
 # ===== 설정 =====
-OPENWEATHER_API_KEY = "1d5cc2adeb9583f7289f0d588a2f4964"  # 실제 키로 교체
+SECRET_NAME = os.getenv("SECRET_NAME", "")
+AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
+
+secrets_client = boto3.client("secretsmanager", region_name=AWS_REGION)
+
+
+@lru_cache(maxsize=1)
+def get_openweather_api_key() -> str:
+    if not SECRET_NAME:
+        raise RuntimeError("SECRET_NAME 환경 변수가 설정되지 않았습니다.")
+
+    try:
+        response = secrets_client.get_secret_value(SecretId=SECRET_NAME)
+        secret_string = response.get("SecretString")
+
+        if not secret_string:
+            raise RuntimeError("SecretString 이 비어 있습니다.")
+
+        secret_obj = json.loads(secret_string)
+        api_key = secret_obj.get("OPENWEATHER_API_KEY", "")
+
+        if not api_key:
+            raise RuntimeError("시크릿에 OPENWEATHER_API_KEY 키가 없습니다.")
+
+        return api_key
+
+    except ClientError as e:
+        raise RuntimeError(
+            f"Secrets Manager 조회 실패: {e.response['Error']['Code']}"
+        ) from e
 OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 
@@ -93,7 +133,7 @@ def weather_factor(temp_c: float, rain_mm: float, wind_mps: float) -> float:
     return temp_score * rain_score * wind_score
 
 
-# TODO: 휴리스틱 코드라 추후에 모델 붙일 예정
+
 def raw_congestion_score(
     beach: BeachInfo,
     dt_kst: datetime,
@@ -112,13 +152,10 @@ def raw_congestion_score(
 
 def normalize_to_0_100(score: float, max_score: float = 1.0) -> float:
     # 최대 이론치 기준 0~100 정규화
-    # 상한을 1.5로 고정 — 현재 룰 기반에서는 score가 1.0을 넘지 않지만,
-    # 추후 AI 모델 등 외부 인자가 추가되어 score가 1.0을 초과하더라도
-    # 최대 150점을 넘지 않도록 방어 (ex. 1.8 → 1.5로 잘림)
-    x = min(score / max_score, 1.5)
-    return round(x * 100, 1)  # 소수점 1자리 반올림 후 퍼센트로 반환
+    x = min(score / max_score, 1.5)  # 상한 150%
+    return round(x * 100, 1)
 
-# 퍼센트 
+
 def level_from_pct(pct: float) -> str:
     if pct < 30:
         return "여유"
@@ -131,10 +168,6 @@ def level_from_pct(pct: float) -> str:
 
 
 # ===== 날씨 조회 (선택지 B: 에러 내용 그대로 노출) =====
-from fastapi import HTTPException
-from pydantic import BaseModel
-import requests
-
 class Weather(BaseModel):
     temp_c: float
     rain_mm: float
@@ -142,43 +175,26 @@ class Weather(BaseModel):
 
 
 def fetch_weather_for_beach(beach: BeachInfo) -> Weather:
-    """
-    - OPENWEATHER_API_KEY만 검사해서 없으면 에러를 내고,
-    - 실제 요청은:
-        - 환경 프록시(HTTP_PROXY, HTTPS_PROXY 등) 무시
-        - timeout 조금 넉넉하게 (연결 5초 → 10초)
-    로 보낸다.
-    """
-
-    # 1) API 키 미설정이면 진짜 설정 에러니까 그대로 에러
-    if OPENWEATHER_API_KEY == "YOUR_OPENWEATHER_API_KEY" or not OPENWEATHER_API_KEY:
+    try:
+        openweather_api_key = get_openweather_api_key()
+    except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail={
-                "msg": "OPENWEATHER_API_KEY가 설정되지 않았습니다. main.py 상단의 OPENWEATHER_API_KEY 값을 실제 키로 바꾸세요.",
-            },
+            detail={"msg": f"OpenWeather API 키 조회 실패: {str(e)}"},
         )
 
     url = OPENWEATHER_BASE_URL
     params = {
         "lat": beach.lat,
         "lon": beach.lon,
-        "appid": OPENWEATHER_API_KEY,
+        "appid": openweather_api_key,
     }
 
     try:
-        # ★ 핵심: 환경 프록시 무시
-        session = requests.Session()
-        session.trust_env = False  # HTTP_PROXY, HTTPS_PROXY 등 무시
-
-        # connect/read 타임아웃을 분리해서 조금 넉넉하게
         resp = session.get(url, params=params, timeout=(5, 10))
-
-        # 디버깅용 로그
         print("[OpenWeather] called:", resp.url, "status:", resp.status_code)
 
         if resp.status_code != 200:
-            # 상태 코드가 이상하면 서버 응답을 콘솔에 찍고, 일단 더미값으로 진행
             print("[OpenWeather] non-200 response body:", resp.text[:500])
             return Weather(temp_c=26.0, rain_mm=0.0, wind_mps=3.0)
 
@@ -195,10 +211,9 @@ def fetch_weather_for_beach(beach: BeachInfo) -> Weather:
         return Weather(temp_c=temp_c, rain_mm=rain_mm, wind_mps=wind_mps)
 
     except Exception as e:
-        # requests 쪽에서 어떤 예외가 나도 서버 콘솔에 찍고 더미 날씨로 fallback
         print("[OpenWeather] exception:", repr(e))
         return Weather(temp_c=26.0, rain_mm=0.0, wind_mps=3.0)
-
+    
 # ===== 응답 스키마 =====
 class InputContext(BaseModel):
     timestamp: datetime
@@ -369,6 +384,7 @@ def get_hourly_congestion(beach_id: str, target_date: Optional[date] = None):
         points=points,
     )
 
+handler = Mangum(app, lifespan="off")
 
 if __name__ == "__main__":
     import uvicorn
