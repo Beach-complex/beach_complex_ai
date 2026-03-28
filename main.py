@@ -20,7 +20,7 @@ session.trust_env = False
 
 # ===== 설정 =====
 SECRET_NAME = os.getenv("SECRET_NAME", "")
-AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
+AWS_REGION = os.environ["AWS_REGION"]
 
 secrets_client = boto3.client("secretsmanager", region_name=AWS_REGION)
 
