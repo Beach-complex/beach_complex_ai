@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "updated_at": "2026-05-11T00:00:00Z",
+  "beaches": [
+    {
+      "code": "HAEUNDAE",
+      "name": "해운대해수욕장",
+      "status": "OPEN",
+      "lat": 35.1587,
+      "lon": 129.1599,
+      "popularity_weight": 1.0
+    },
+    {
+      "code": "GWANGALLI",
+      "name": "광안리해수욕장",
+      "status": "OPEN",
+      "lat": 35.1532,
+      "lon": 129.1185,
+      "popularity_weight": 0.95
+    },
+    {
+      "code": "SONGJEONG",
+      "name": "송정해수욕장",
+      "status": "OPEN",
+      "lat": 35.1783,
+      "lon": 129.1997,
+      "popularity_weight": 0.75
+    },
+    {
+      "code": "DADAEPO",
+      "name": "다대포해수욕장",
+      "status": "OPEN",
+      "lat": 35.0461,
+      "lon": 128.9657,
+      "popularity_weight": 0.70
+    },
+    {
+      "code": "SONGDO",
+      "name": "송도해수욕장",
+      "status": "OPEN",
+      "lat": 35.0757,
+      "lon": 129.0153,
+      "popularity_weight": 0.70
+    },
+    {
+      "code": "ILGWANG",
+      "name": "일광해수욕장",
+      "status": "OPEN",
+      "lat": 35.2603,
+      "lon": 129.2344,
+      "popularity_weight": 0.60
+    },
+    {
+      "code": "IMRANG",
+      "name": "임랑해수욕장",
+      "status": "OPEN",
+      "lat": 35.3032,
+      "lon": 129.2675,
+      "popularity_weight": 0.55
+    }
+  ]
+}

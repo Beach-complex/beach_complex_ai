@@ -1,6 +1,7 @@
 import os
 import json
 from functools import lru_cache
+from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
@@ -53,30 +54,38 @@ OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 
 # ===== 해수욕장 정보 =====
+BEACHES_JSON_PATH = Path(__file__).parent / "beaches.json"
+
+
 class BeachInfo(BaseModel):
     id: str
     name: str
+    status: str
     lat: float
     lon: float
     popularity_weight: float  # 인기도 가중치
 
 
-BEACHES: Dict[str, BeachInfo] = {
-    "haeundae": BeachInfo(
-        id="haeundae",
-        name="해운대해수욕장",
-        lat=35.158698,
-        lon=129.160384,
-        popularity_weight=1.0,
-    ),
-    "gwangalli": BeachInfo(
-        id="gwangalli",
-        name="광안리해수욕장",
-        lat=35.153208,
-        lon=129.118386,
-        popularity_weight=0.85,
-    ),
-}
+def load_beaches(path: Path = BEACHES_JSON_PATH) -> Dict[str, BeachInfo]:
+    """beaches.json을 읽어 code 키 기준 dict로 반환한다."""
+    with path.open(encoding="utf-8") as fp:
+        raw = json.load(fp)
+
+    beaches: Dict[str, BeachInfo] = {}
+    for entry in raw["beaches"]:
+        code = entry["code"].upper()
+        beaches[code] = BeachInfo(
+            id=code,
+            name=entry["name"],
+            status=entry["status"],
+            lat=float(entry["lat"]),
+            lon=float(entry["lon"]),
+            popularity_weight=float(entry["popularity_weight"]),
+        )
+    return beaches
+
+
+BEACHES: Dict[str, BeachInfo] = load_beaches()
 
 # ===== 혼잡도 로직 =====
 def time_factor(hour: int) -> float:
@@ -278,9 +287,13 @@ def list_beaches():
 
 @app.get("/congestion/current", response_model=CongestionResult)
 def get_current_congestion(beach_id: str):
-    if beach_id not in BEACHES:
-        raise HTTPException(status_code=404, detail="해수욕장을 찾을 수 없음")
-    beach = BEACHES[beach_id]
+    normalized = beach_id.upper()
+    if normalized not in BEACHES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"해수욕장을 찾을 수 없음: {normalized}",
+        )
+    beach = BEACHES[normalized]
 
     now_kst = datetime.now(tz=KST)
     weather = fetch_weather_for_beach(beach)
@@ -334,9 +347,13 @@ def get_current_congestion(beach_id: str):
 
 @app.get("/congestion/hourly", response_model=HourlyCongestionResult)
 def get_hourly_congestion(beach_id: str, target_date: Optional[date] = None):
-    if beach_id not in BEACHES:
-        raise HTTPException(status_code=404, detail="해수욕장을 찾을 수 없음")
-    beach = BEACHES[beach_id]
+    normalized = beach_id.upper()
+    if normalized not in BEACHES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"해수욕장을 찾을 수 없음: {normalized}",
+        )
+    beach = BEACHES[normalized]
 
     # 기본은 오늘 날짜
     if target_date is None:
