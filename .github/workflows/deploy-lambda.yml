@@ -39,9 +39,9 @@ jobs:
       - name: Build Lambda package
         run: |
           rm -rf build "$LAMBDA_PACKAGE"
-          mkdir -p build
+          mkdir -p build/vendor
           python -m pip install \
-            --target ./build \
+            --target ./build/vendor \
             --platform manylinux2014_x86_64 \
             --implementation cp \
             --python-version "$PYTHON_VERSION" \
