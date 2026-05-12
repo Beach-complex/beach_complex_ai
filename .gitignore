@@ -18,6 +18,7 @@ reports.metrics.json
 *.iml
 .gradle/
 build/
+.lambda-build/
 java-api/build/
 java-api/.gradle/
 python/__pycache__/

@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+VENDOR_PATH = Path(__file__).parent / "vendor"
+if VENDOR_PATH.exists():
+    sys.path.insert(0, str(VENDOR_PATH))
+
 from app.main import app, create_app, handler
 
 
