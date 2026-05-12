@@ -1,0 +1,71 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-lambda-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  LAMBDA_PACKAGE: beach-ai.zip
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Validate sources
+        run: |
+          AWS_REGION=us-east-1 OPENWEATHER_SECRET_NAME=dummy python -m py_compile main.py app/*.py
+          python -m json.tool beaches.json > /dev/null
+
+      - name: Build Lambda package
+        run: |
+          rm -rf build "$LAMBDA_PACKAGE"
+          mkdir -p build
+          python -m pip install \
+            --target ./build \
+            --platform manylinux2014_x86_64 \
+            --implementation cp \
+            --python-version "$PYTHON_VERSION" \
+            --only-binary=:all: \
+            --upgrade \
+            -r requirements.txt
+          cp main.py beaches.json ./build/
+          cp -r app ./build/app
+          cd build
+          zip -r "../$LAMBDA_PACKAGE" .
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "${{ secrets.LAMBDA_FUNCTION_NAME }}" \
+            --zip-file "fileb://$LAMBDA_PACKAGE"
+
+      - name: Wait for deployment
+        run: |
+          aws lambda wait function-updated \
+            --function-name "${{ secrets.LAMBDA_FUNCTION_NAME }}"
